@@ -1,21 +1,59 @@
 # Lottie Editor
 
-This is a simple [Lottie animation](https://airbnb.io/lottie/#/) editor.
-
-[Try it here](https://lottie-editor-sigma.vercel.app/)
+A browser-based [Lottie animation](https://lottie.github.io/) editor — inspect, restyle, retime and export Lottie files without leaving the page.
 
 ## Features
 
-- Import and export Lottie JSON files.
-- List layers and shapes.
-- Edit shape colours, animation dimensions and framerate.
-- Preview changes in real time.
+**Import**
 
-![editor screenshot](./screenshot.png)
+- Drag & drop a `.json` anywhere, browse files, load from a URL, or try the bundled example
+- Validation with friendly errors; sessions are autosaved and restored on reload
+
+**Edit**
+
+- Layer panel: select, rename (double-click), show/hide, reorder, duplicate and delete layers
+- Inspector: document size, frame rate and duration; per-layer transform (position, scale, rotation, opacity, anchor) for non-keyframed properties
+- Colors: edit fills, strokes, gradient stops and solid layers — including layers nested inside precomps; the document **palette** recolors every use of a color at once
+- Stroke width editing
+- Full undo/redo history
+
+**Timeline & keyframes**
+
+- Frame ruler with scrubbing playhead, play/pause, loop and playback speed
+- Per-layer bars: drag to shift a layer in time, drag the edges to trim in/out points
+- Expandable per-property tracks for every animated property
+- Drag keyframes to retime them, double-click a track to add one, delete from the keyframe toolbar
+- Easing presets (linear, smooth, ease in/out, hold) plus an interactive bezier curve editor per segment
+- Inspector "stopwatch" diamonds: animate a static property, add/remove keys at the playhead — values follow the playhead and become editable when parked on a key
+
+**Export**
+
+- Pretty or minified Lottie JSON, dotLottie (`.lottie`), or copy JSON to the clipboard
+
+**Keyboard shortcuts**
+
+| Keys                | Action                            |
+| ------------------- | --------------------------------- |
+| `Space`             | Play / pause                      |
+| `←` / `→` (`⇧` ×10) | Step frames                       |
+| `⌘Z` / `⇧⌘Z`        | Undo / redo                       |
+| `⌘D`                | Duplicate selected layer          |
+| `⌫`                 | Delete selected keyframe or layer |
+| `Esc`               | Deselect                          |
+
+## Architecture
+
+- **Next.js 14 + TypeScript + Tailwind** — single-page client app
+- **zustand** store with snapshot-based undo/redo (`lib/store.ts`)
+- Pure Lottie-document operations in `lib/lottie/` (parsing, color collection, transforms, keyframes, layer ops)
+- **lottie-web** drives the canvas directly via an imperative bridge (`lib/playerBridge.ts`) so scrubbing stays frame-accurate
+- Editor UI in `components/editor/` (top bar, layer panel, canvas stage, inspector, timeline)
 
 ## Development
 
-1. Clone the repository: `git clone https://github.com/chrisgreen1993/lottie-editor.git`
-2. Navigate to the project directory: `cd lottie-editor`
-3. Install dependencies: `npm install`
-4. Start the application: `npm run dev`
+```bash
+npm install
+npm run dev   # http://localhost:3000
+npm run build
+npm run lint
+```
