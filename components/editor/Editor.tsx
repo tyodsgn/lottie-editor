@@ -9,6 +9,7 @@ import { LayerPanel } from "@/components/editor/LayerPanel";
 import { Timeline } from "@/components/editor/Timeline";
 import { Toasts } from "@/components/editor/Toasts";
 import { TopBar } from "@/components/editor/TopBar";
+import { deleteKeyframe } from "@/lib/lottie/keyframes";
 import { parseLottie } from "@/lib/lottie/model";
 import { deleteLayer, duplicateLayer } from "@/lib/lottie/ops";
 import { loadSession } from "@/lib/persistence";
@@ -104,18 +105,26 @@ export function Editor() {
         state.update((draft) => duplicateLayer(draft, index));
         return;
       }
-      if (
-        (e.key === "Delete" || e.key === "Backspace") &&
-        state.selectedLayer !== null
-      ) {
-        e.preventDefault();
-        const index = state.selectedLayer;
-        state.update((draft) => deleteLayer(draft, index));
-        state.selectLayer(null);
-        return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        // A selected keyframe takes precedence over the selected layer.
+        if (state.selectedKeyframe) {
+          e.preventDefault();
+          const sel = state.selectedKeyframe;
+          state.update((draft) => deleteKeyframe(draft, sel.path, sel.index));
+          state.selectKeyframe(null);
+          return;
+        }
+        if (state.selectedLayer !== null) {
+          e.preventDefault();
+          const index = state.selectedLayer;
+          state.update((draft) => deleteLayer(draft, index));
+          state.selectLayer(null);
+          return;
+        }
       }
       if (e.key === "Escape") {
-        state.selectLayer(null);
+        if (state.selectedKeyframe) state.selectKeyframe(null);
+        else state.selectLayer(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);

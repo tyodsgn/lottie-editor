@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import type { LottieDoc } from "./lottie/model";
+import type { Path } from "./lottie/ops";
 import { clearSession, saveSession } from "./persistence";
 
 const HISTORY_LIMIT = 60;
@@ -21,10 +22,19 @@ interface UpdateOptions {
   coalesceKey?: string;
 }
 
+export interface KeyframeSelection {
+  /** Path from the doc root to the animated property object. */
+  path: Path;
+  index: number;
+  layer: number;
+  label: string;
+}
+
 interface EditorState {
   doc: LottieDoc | null;
   fileName: string;
   selectedLayer: number | null;
+  selectedKeyframe: KeyframeSelection | null;
 
   past: LottieDoc[];
   future: LottieDoc[];
@@ -48,6 +58,7 @@ interface EditorState {
   undo: () => void;
   redo: () => void;
   selectLayer: (index: number | null) => void;
+  selectKeyframe: (selection: KeyframeSelection | null) => void;
 
   setPlaying: (playing: boolean) => void;
   setCurrentFrame: (frame: number) => void;
@@ -73,6 +84,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   doc: null,
   fileName: "animation",
   selectedLayer: null,
+  selectedKeyframe: null,
 
   past: [],
   future: [],
@@ -94,6 +106,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       doc,
       fileName: fileName.replace(/\.(json|lottie)$/i, "") || "animation",
       selectedLayer: null,
+      selectedKeyframe: null,
       past: [],
       future: [],
       lastCoalesceKey: null,
@@ -110,6 +123,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       doc: null,
       fileName: "animation",
       selectedLayer: null,
+      selectedKeyframe: null,
       past: [],
       future: [],
       lastCoalesceKey: null,
@@ -169,6 +183,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       future: [doc, ...future].slice(0, HISTORY_LIMIT),
       lastCoalesceKey: null,
       selectedLayer: null,
+      selectedKeyframe: null,
     });
     scheduleSave(previous, fileName);
   },
@@ -183,11 +198,18 @@ export const useEditor = create<EditorState>((set, get) => ({
       future: rest,
       lastCoalesceKey: null,
       selectedLayer: null,
+      selectedKeyframe: null,
     });
     scheduleSave(next, fileName);
   },
 
-  selectLayer: (index) => set({ selectedLayer: index }),
+  selectLayer: (index) => set({ selectedLayer: index, selectedKeyframe: null }),
+  selectKeyframe: (selectedKeyframe) =>
+    set(
+      selectedKeyframe
+        ? { selectedKeyframe, selectedLayer: selectedKeyframe.layer }
+        : { selectedKeyframe: null },
+    ),
 
   setPlaying: (isPlaying) => set({ isPlaying }),
   setCurrentFrame: (currentFrame) => set({ currentFrame }),

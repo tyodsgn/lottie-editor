@@ -17,11 +17,14 @@ A browser-based [Lottie animation](https://lottie.github.io/) editor — inspect
 - Stroke width editing
 - Full undo/redo history
 
-**Timeline**
+**Timeline & keyframes**
 
 - Frame ruler with scrubbing playhead, play/pause, loop and playback speed
 - Per-layer bars: drag to shift a layer in time, drag the edges to trim in/out points
-- Keyframe markers extracted from every animated property
+- Expandable per-property tracks for every animated property
+- Drag keyframes to retime them, double-click a track to add one, delete from the keyframe toolbar
+- Easing presets (linear, smooth, ease in/out, hold) plus an interactive bezier curve editor per segment
+- Inspector "stopwatch" diamonds: animate a static property, add/remove keys at the playhead — values follow the playhead and become editable when parked on a key
 
 **Export**
 
@@ -29,14 +32,14 @@ A browser-based [Lottie animation](https://lottie.github.io/) editor — inspect
 
 **Keyboard shortcuts**
 
-| Keys                | Action                   |
-| ------------------- | ------------------------ |
-| `Space`             | Play / pause             |
-| `←` / `→` (`⇧` ×10) | Step frames              |
-| `⌘Z` / `⇧⌘Z`        | Undo / redo              |
-| `⌘D`                | Duplicate selected layer |
-| `⌫`                 | Delete selected layer    |
-| `Esc`               | Deselect                 |
+| Keys                | Action                            |
+| ------------------- | --------------------------------- |
+| `Space`             | Play / pause                      |
+| `←` / `→` (`⇧` ×10) | Step frames                       |
+| `⌘Z` / `⇧⌘Z`        | Undo / redo                       |
+| `⌘D`                | Duplicate selected layer          |
+| `⌫`                 | Delete selected keyframe or layer |
+| `Esc`               | Deselect                          |
 
 ## Architecture
 

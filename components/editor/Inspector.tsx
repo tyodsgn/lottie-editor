@@ -1,10 +1,19 @@
 "use client";
 
-import { SlidersHorizontal } from "lucide-react";
+import { get as lget, set as lset } from "lodash-es";
+import { Diamond, SlidersHorizontal } from "lucide-react";
 import * as React from "react";
 
 import { ColorSwatch, NumberField, Section } from "@/components/editor/fields";
 import { type RGB } from "@/lib/lottie/color";
+import {
+  addKeyframe,
+  convertToAnimated,
+  deleteKeyframe,
+  sampleProp,
+  setKeyframeValue,
+  type AnimProp,
+} from "@/lib/lottie/keyframes";
 import {
   docDurationSeconds,
   layerName,
@@ -15,12 +24,12 @@ import {
   collectDocColors,
   collectLayerColors,
   collectStrokeWidths,
-  getLayerTransform,
   paletteGroups,
-  setLayerTransform,
   setStrokeWidth,
+  type Path,
 } from "@/lib/lottie/ops";
 import { useEditor } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 function DocumentSettings() {
   const doc = useEditor((s) => s.doc)!;
@@ -110,15 +119,162 @@ function DocPalette() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Transform editing with keyframe awareness
+// ---------------------------------------------------------------------------
+
+interface PropSpec {
+  key: "p" | "a" | "s" | "r" | "o";
+  labels: [string] | [string, string];
+  fallback: number[];
+  min?: number;
+  max?: number;
+}
+
+const TRANSFORM_SPECS: PropSpec[] = [
+  { key: "p", labels: ["X", "Y"], fallback: [0, 0] },
+  { key: "s", labels: ["Scale X %", "Scale Y %"], fallback: [100, 100] },
+  { key: "r", labels: ["Rotation °"], fallback: [0] },
+  { key: "o", labels: ["Opacity %"], fallback: [100], min: 0, max: 100 },
+  { key: "a", labels: ["Anchor X", "Anchor Y"], fallback: [0, 0] },
+];
+
+function KeyframeToggle({
+  state,
+  onClick,
+}: {
+  state: "static" | "on-key" | "off-key";
+  onClick: () => void;
+}) {
+  const title =
+    state === "static"
+      ? "Animate — add a keyframe at the playhead"
+      : state === "on-key"
+        ? "Remove the keyframe at the playhead"
+        : "Add a keyframe at the playhead";
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "mb-1.5 inline-flex h-5 w-5 shrink-0 items-center justify-center self-end rounded hover:bg-accent",
+        state === "on-key"
+          ? "text-primary"
+          : state === "off-key"
+            ? "text-amber-400"
+            : "text-muted-foreground/60 hover:text-foreground",
+      )}
+    >
+      <Diamond size={11} className={state === "on-key" ? "fill-current" : ""} />
+    </button>
+  );
+}
+
+function TransformPropRow({
+  spec,
+  layerIndex,
+}: {
+  spec: PropSpec;
+  layerIndex: number;
+}) {
+  const doc = useEditor((s) => s.doc)!;
+  const update = useEditor((s) => s.update);
+  const frame = useEditor((s) => Math.round(s.currentFrame));
+
+  const layer = doc.layers[layerIndex];
+  const ks = (layer.ks ?? {}) as Record<string, AnimProp>;
+  const prop = ks[spec.key] as
+    | (AnimProp & { s?: boolean; x?: AnimProp; y?: AnimProp })
+    | undefined;
+  const propPath: Path = ["layers", layerIndex, "ks", spec.key];
+
+  const split = spec.key === "p" && prop?.s === true;
+
+  // Split positions sample each axis; everything else samples the prop.
+  const sampled = split
+    ? (() => {
+        const sx = sampleProp(prop?.x, [0], frame);
+        const sy = sampleProp(prop?.y, [0], frame);
+        return {
+          value: [sx.value[0] ?? 0, sy.value[0] ?? 0],
+          animated: sx.animated || sy.animated,
+          keyIndex: -1,
+          axes: [sx, sy] as const,
+        };
+      })()
+    : { ...sampleProp(prop, spec.fallback, frame), axes: null };
+
+  const editable = split ? false : !sampled.animated || sampled.keyIndex !== -1;
+
+  const commit = (componentIndex: number, v: number) => {
+    const next = sampled.value.slice();
+    next[componentIndex] = v;
+    update(
+      (draft) => {
+        const draftProp = lget(draft, propPath) as AnimProp | undefined;
+        if (!sampled.animated) {
+          // Static write, preserving any extra components (e.g. z).
+          const existing =
+            draftProp && Array.isArray(draftProp.k)
+              ? (draftProp.k as number[])
+              : [];
+          const merged = [...existing];
+          next.forEach((n, idx) => (merged[idx] = n));
+          lset(draft, propPath, {
+            ...(draftProp ?? {}),
+            a: 0,
+            k: spec.labels.length === 1 ? next[0] : merged,
+          });
+        } else if (sampled.keyIndex !== -1) {
+          setKeyframeValue(draft, propPath, sampled.keyIndex, next);
+        }
+      },
+      { coalesceKey: `transform-${spec.key}-${layerIndex}` },
+    );
+  };
+
+  const toggleState = !sampled.animated
+    ? "static"
+    : sampled.keyIndex !== -1
+      ? "on-key"
+      : "off-key";
+
+  const onToggle = () => {
+    update((draft) => {
+      if (!sampled.animated) {
+        convertToAnimated(draft, propPath, frame);
+      } else if (sampled.keyIndex !== -1) {
+        deleteKeyframe(draft, propPath, sampled.keyIndex);
+      } else {
+        addKeyframe(draft, propPath, frame);
+      }
+    });
+  };
+
+  return (
+    <div className="mt-2 flex gap-2 first:mt-0">
+      {spec.labels.map((label, idx) => (
+        <NumberField
+          key={label}
+          label={label}
+          value={sampled.value[idx] ?? spec.fallback[idx] ?? 0}
+          min={spec.min}
+          max={spec.max}
+          disabled={!editable}
+          onCommit={(v) => commit(idx, v)}
+        />
+      ))}
+      {!split && <KeyframeToggle state={toggleState} onClick={onToggle} />}
+    </div>
+  );
+}
+
 function LayerSettings({ index }: { index: number }) {
   const doc = useEditor((s) => s.doc)!;
   const update = useEditor((s) => s.update);
   const layer = doc.layers[index];
 
-  const transform = React.useMemo(
-    () => (layer ? getLayerTransform(layer) : null),
-    [layer],
-  );
   const colors = React.useMemo(
     () => collectLayerColors(doc, index),
     [doc, index],
@@ -128,16 +284,7 @@ function LayerSettings({ index }: { index: number }) {
     [doc, index],
   );
 
-  if (!layer || !transform) return null;
-
-  const setT = (
-    key: Parameters<typeof setLayerTransform>[1],
-    value: number | number[],
-    coalesceKey: string,
-  ) =>
-    update((draft) => setLayerTransform(draft.layers[index], key, value), {
-      coalesceKey: `${coalesceKey}-${index}`,
-    });
+  if (!layer) return null;
 
   return (
     <>
@@ -150,84 +297,13 @@ function LayerSettings({ index }: { index: number }) {
       </Section>
 
       <Section title="Transform">
-        <div className="flex gap-2">
-          <NumberField
-            label="X"
-            value={transform.position.value[0] ?? 0}
-            disabled={transform.position.animated}
-            onCommit={(v) =>
-              setT("position", [v, transform.position.value[1] ?? 0], "pos")
-            }
-          />
-          <NumberField
-            label="Y"
-            value={transform.position.value[1] ?? 0}
-            disabled={transform.position.animated}
-            onCommit={(v) =>
-              setT("position", [transform.position.value[0] ?? 0, v], "pos")
-            }
-          />
-        </div>
-        <div className="mt-2 flex gap-2">
-          <NumberField
-            label="Scale X %"
-            value={transform.scale.value[0] ?? 100}
-            disabled={transform.scale.animated}
-            onCommit={(v) =>
-              setT("scale", [v, transform.scale.value[1] ?? 100], "scale")
-            }
-          />
-          <NumberField
-            label="Scale Y %"
-            value={transform.scale.value[1] ?? 100}
-            disabled={transform.scale.animated}
-            onCommit={(v) =>
-              setT("scale", [transform.scale.value[0] ?? 100, v], "scale")
-            }
-          />
-        </div>
-        <div className="mt-2 flex gap-2">
-          <NumberField
-            label="Rotation °"
-            value={transform.rotation.value}
-            disabled={transform.rotation.animated}
-            onCommit={(v) => setT("rotation", v, "rot")}
-          />
-          <NumberField
-            label="Opacity %"
-            value={transform.opacity.value}
-            min={0}
-            max={100}
-            disabled={transform.opacity.animated}
-            onCommit={(v) => setT("opacity", v, "opacity")}
-          />
-        </div>
-        <div className="mt-2 flex gap-2">
-          <NumberField
-            label="Anchor X"
-            value={transform.anchor.value[0] ?? 0}
-            disabled={transform.anchor.animated}
-            onCommit={(v) =>
-              setT("anchor", [v, transform.anchor.value[1] ?? 0], "anchor")
-            }
-          />
-          <NumberField
-            label="Anchor Y"
-            value={transform.anchor.value[1] ?? 0}
-            disabled={transform.anchor.animated}
-            onCommit={(v) =>
-              setT("anchor", [transform.anchor.value[0] ?? 0, v], "anchor")
-            }
-          />
-        </div>
-        {(transform.position.animated ||
-          transform.scale.animated ||
-          transform.rotation.animated ||
-          transform.opacity.animated) && (
-          <p className="mt-2 text-[10px] text-muted-foreground">
-            Keyframed properties are shown at their first keyframe and locked.
-          </p>
-        )}
+        {TRANSFORM_SPECS.map((spec) => (
+          <TransformPropRow key={spec.key} spec={spec} layerIndex={index} />
+        ))}
+        <p className="mt-2 text-[10px] text-muted-foreground">
+          Keyframed values follow the playhead. Park it on a ◆ to edit that
+          keyframe, or use the diamond buttons to add and remove keys.
+        </p>
       </Section>
 
       {colors.length > 0 && (
